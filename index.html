@@ -115,6 +115,15 @@ window.RATES = {"usdUah":45.0883,"eurUah":51.5989,"btcUsd":65437,"ethUsd":1726,"
   </div>
 
   <div class="card">
+    <div class="section-title">Inzhur Energy</div>
+    <table>
+      <thead><tr><th class="l">Параметр</th><th>К-сть сертифікатів</th><th>Ціна за сертифікат</th><th>Валюта</th><th>Вартість, грн</th><th>Вартість, USD</th></tr></thead>
+      <tbody id="energyBody"></tbody>
+    </table>
+    <div class="note">Без дивідендів — лише поточна вартість сертифікатів. Онови ціну за сертифікат за фактом.</div>
+  </div>
+
+  <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div class="section-title">ОВДП / військові облігації</div>
       <button class="btn add" id="addOvdp">+ Додати облігацію</button>
@@ -159,6 +168,7 @@ const DEF = {
   over:{usdUah:null,eurUah:null,btcUsd:null,ethUsd:null},
   cashUsd:0, cashEur:0, btc:0, eth:0,
   inzhur:{value:0, cur:"USD", yld:13.6, tax:14},
+  energy:{qty:0, price:0, cur:"UAH"},
   ovdp:[{name:"ОВДП #1", cur:"UAH", amount:0, yld:17, buy:"", mat:""}],
   debts:[{who:"", amount:0, cur:"USD", note:"", due:""}],
   incDebts:false
@@ -188,36 +198,50 @@ function renderRates(){
       <div class="row"><input type="number" step="any" data-rate="${r.k}" value="${val}"></div>`;
     box.appendChild(el);
   });
-  box.querySelectorAll('input[data-rate]').forEach(i=>i.oninput=e=>{ S.over[e.target.dataset.rate]=parseFloat(e.target.value)||0; save(); renderAll(false); });
+  box.querySelectorAll('input[data-rate]').forEach(i=>i.oninput=e=>{ S.over[e.target.dataset.rate]=parseFloat(e.target.value)||0; save(); recomputeAll(); });
   box.querySelectorAll('[data-reset]').forEach(b=>b.onclick=()=>{ S.over[b.dataset.reset]=null; save(); renderAll(); });
 }
 
-// ---- simple assets (cash + crypto) ----
-function renderSimple(){
-  const rows=[
-    {key:"cashUsd", name:"Готівка USD", cur:"USD", price:1, unit:""},
-    {key:"cashEur", name:"Готівка EUR", cur:"EUR", price:1, unit:""},
-    {key:"btc", name:"Bitcoin", cur:"USD", price:rate('btcUsd'), unit:"BTC"},
-    {key:"eth", name:"Ethereum", cur:"USD", price:rate('ethUsd'), unit:"ETH"},
+function curSel(id,val){ return `<select id="${id}">${["USD","UAH","EUR"].map(c=>`<option ${c===val?'selected':''}>${c}</option>`).join("")}</select>`; }
+
+// ---- simple assets (cash + crypto) : update-in-place to keep input focus ----
+function simpleRows(){
+  return [
+    {key:"cashUsd", name:"Готівка USD", cur:"USD", price:()=>1, unit:"USD"},
+    {key:"cashEur", name:"Готівка EUR", cur:"EUR", price:()=>1, unit:"EUR"},
+    {key:"btc", name:"Bitcoin", cur:"USD", price:()=>rate('btcUsd'), unit:"BTC"},
+    {key:"eth", name:"Ethereum", cur:"USD", price:()=>rate('ethUsd'), unit:"ETH"},
   ];
+}
+function renderSimple(){
   const b=document.getElementById('simpleBody'); b.innerHTML="";
-  rows.forEach(r=>{
-    const valCur = S[r.key]*r.price;            // value in r.cur
-    const uah=toUah(valCur,r.cur), us=toUsd(valCur,r.cur);
-    const rateTxt = r.unit? (r.unit==="BTC"?usd(rate('btcUsd')):usd(rate('ethUsd'))) : (r.cur==="USD"?nf(rate('usdUah'),4)+" ₴":nf(rate('eurUah'),4)+" ₴");
+  simpleRows().forEach(r=>{
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td class="l">${r.name} ${r.unit?'<span class="muted">('+r.unit+')</span>':'<span class="muted">('+r.cur+')</span>'}</td>
-      <td><input class="num" type="number" step="any" data-k="${r.key}" value="${S[r.key]}"></td>
-      <td class="muted">${rateTxt}</td>
-      <td>${grn(uah)}</td><td class="muted">${usd(us)}</td>`;
+    tr.innerHTML=`<td class="l">${r.name} <span class="muted">(${r.unit})</span></td>
+      <td><input class="num" type="number" step="any" value="${S[r.key]}"></td>
+      <td class="muted" data-rate="${r.key}"></td>
+      <td data-uah="${r.key}"></td><td class="muted" data-usd="${r.key}"></td>`;
     b.appendChild(tr);
+    tr.querySelector('input').oninput=e=>{ S[r.key]=parseFloat(e.target.value)||0; save(); recomputeSimple(); renderTotals(); };
   });
-  b.querySelectorAll('input[data-k]').forEach(i=>i.oninput=e=>{ S[e.target.dataset.k]=parseFloat(e.target.value)||0; save(); renderAll(false); });
+  recomputeSimple();
+}
+function recomputeSimple(){
+  simpleRows().forEach(r=>{
+    const valCur=S[r.key]*r.price();
+    const rt=(r.unit==="BTC"||r.unit==="ETH")?usd(r.price()):nf(r.cur==="USD"?rate('usdUah'):rate('eurUah'),4)+" ₴";
+    const set=(sel,t)=>{const el=document.querySelector(sel);if(el)el.textContent=t;};
+    set(`[data-rate="${r.key}"]`,rt);
+    set(`[data-uah="${r.key}"]`,grn(toUah(valCur,r.cur)));
+    set(`[data-usd="${r.key}"]`,usd(toUsd(valCur,r.cur)));
+  });
 }
 
-// ---- Inzhur ----
+// ---- Inzhur REIT ----
+function updateInzhurProfit(){ const z=S.inzhur; const p=document.getElementById('zProfit'); if(p) p.textContent=nf(z.value*(z.yld/100)*(1-z.tax/100),0)+" "+z.cur+"/рік"; }
 function renderInzhur(){
-  const z=S.inzhur; const b=document.getElementById('inzhurBody'); b.innerHTML="";
+  const z=S.inzhur;
+  const b=document.getElementById('inzhurBody'); b.innerHTML="";
   const tr=document.createElement('tr');
   tr.innerHTML=`<td class="l">Inzhur REIT</td>
     <td><input class="num" type="number" step="any" id="zVal" value="${z.value}"></td>
@@ -226,23 +250,40 @@ function renderInzhur(){
     <td><input class="num" type="number" step="any" id="zTax" value="${z.tax}" style="width:70px"></td>
     <td class="pos" id="zProfit"></td>`;
   b.appendChild(tr);
-  const prof = z.value*(z.yld/100)*(1-z.tax/100);
-  document.getElementById('zProfit').textContent = nf(prof,0)+" "+z.cur+"/рік";
-  tr.querySelector('#zVal').oninput=e=>{z.value=parseFloat(e.target.value)||0;save();renderAll(false);};
-  tr.querySelector('#zCur').onchange=e=>{z.cur=e.target.value;save();renderAll(false);};
-  tr.querySelector('#zYld').oninput=e=>{z.yld=parseFloat(e.target.value)||0;save();renderAll(false);};
-  tr.querySelector('#zTax').oninput=e=>{z.tax=parseFloat(e.target.value)||0;save();renderAll(false);};
+  updateInzhurProfit();
+  tr.querySelector('#zVal').oninput=e=>{z.value=parseFloat(e.target.value)||0;save();updateInzhurProfit();renderTotals();};
+  tr.querySelector('#zCur').onchange=e=>{z.cur=e.target.value;save();updateInzhurProfit();renderTotals();};
+  tr.querySelector('#zYld').oninput=e=>{z.yld=parseFloat(e.target.value)||0;save();updateInzhurProfit();renderTotals();};
+  tr.querySelector('#zTax').oninput=e=>{z.tax=parseFloat(e.target.value)||0;save();updateInzhurProfit();renderTotals();};
 }
-function curSel(id,val){ return `<select id="${id}">${["USD","UAH","EUR"].map(c=>`<option ${c===val?'selected':''}>${c}</option>`).join("")}</select>`; }
+
+// ---- Inzhur Energy (no dividends, certificate value only) ----
+function recomputeEnergy(){
+  if(!S.energy) return;
+  const val=S.energy.qty*S.energy.price;
+  const a=document.querySelector('[data-euah]'), c=document.querySelector('[data-eusd]');
+  if(a)a.textContent=grn(toUah(val,S.energy.cur)); if(c)c.textContent=usd(toUsd(val,S.energy.cur));
+}
+function renderEnergy(){
+  const en=S.energy||(S.energy=JSON.parse(JSON.stringify(DEF.energy)));
+  const b=document.getElementById('energyBody'); b.innerHTML="";
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td class="l">Inzhur Energy</td>
+    <td><input class="num" type="number" step="any" id="enQty" value="${en.qty}" style="width:110px"></td>
+    <td><input class="num" type="number" step="any" id="enPrice" value="${en.price}" style="width:110px"></td>
+    <td>${curSel("enCur",en.cur)}</td>
+    <td data-euah></td><td class="muted" data-eusd></td>`;
+  b.appendChild(tr);
+  tr.querySelector('#enQty').oninput=e=>{en.qty=parseFloat(e.target.value)||0;save();recomputeEnergy();renderTotals();};
+  tr.querySelector('#enPrice').oninput=e=>{en.price=parseFloat(e.target.value)||0;save();recomputeEnergy();renderTotals();};
+  tr.querySelector('#enCur').onchange=e=>{en.cur=e.target.value;save();renderEnergy();renderTotals();};
+  recomputeEnergy();
+}
 
 // ---- ОВДП ----
 function renderOvdp(){
   const b=document.getElementById('ovdpBody'); b.innerHTML="";
   S.ovdp.forEach((o,i)=>{
-    const yElapsed = o.buy? years(o.buy, new Date().toISOString().slice(0,10)) : 0;
-    const yTotal = years(o.buy,o.mat);
-    const cur = o.amount + o.amount*(o.yld/100)*Math.max(0,yElapsed);     // accrued to today
-    const toMat = o.amount*(o.yld/100)*Math.max(0,yTotal);               // total interest
     const tr=document.createElement('tr');
     tr.innerHTML=`<td class="l"><input class="txt" data-i="${i}" data-f="name" value="${o.name||''}"></td>
       <td><input class="num" type="number" step="any" data-i="${i}" data-f="amount" value="${o.amount}"></td>
@@ -250,38 +291,56 @@ function renderOvdp(){
       <td><input class="num" type="number" step="any" style="width:70px" data-i="${i}" data-f="yld" value="${o.yld}"></td>
       <td><input class="dt" type="date" data-i="${i}" data-f="buy" value="${o.buy||''}"></td>
       <td><input class="dt" type="date" data-i="${i}" data-f="mat" value="${o.mat||''}"></td>
-      <td>${nf(cur,0)} ${o.cur}</td>
-      <td class="pos">+${nf(toMat,0)} ${o.cur}</td>
+      <td data-ocur="${i}"></td>
+      <td class="pos" data-tomat="${i}"></td>
       <td><button class="btn del" data-del="${i}">×</button></td>`;
     b.appendChild(tr);
   });
+  recomputeOvdp();
   b.querySelectorAll('[data-f]').forEach(el=>{
     const ev = el.tagName==="SELECT"?"onchange":"oninput";
-    el[ev]=e=>{ const i=+e.target.dataset.i,f=e.target.dataset.f; let v=e.target.value; if(f==="amount"||f==="yld")v=parseFloat(v)||0; S.ovdp[i][f]=v; save(); renderAll(false); };
+    el[ev]=e=>{ const i=+e.target.dataset.i,f=e.target.dataset.f; let v=e.target.value; if(f==="amount"||f==="yld")v=parseFloat(v)||0; S.ovdp[i][f]=v; save(); recomputeOvdp(); renderTotals(); };
   });
-  b.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{ S.ovdp.splice(+btn.dataset.del,1); save(); renderAll(); });
+  b.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{ S.ovdp.splice(+btn.dataset.del,1); save(); renderOvdp(); renderTotals(); });
+}
+function recomputeOvdp(){
+  const today=new Date().toISOString().slice(0,10);
+  S.ovdp.forEach((o,i)=>{
+    const yE=o.buy?Math.max(0,years(o.buy,today)):0;
+    const yT=Math.max(0,years(o.buy,o.mat));
+    const cur=o.amount+o.amount*(o.yld/100)*yE;
+    const toMat=o.amount*(o.yld/100)*yT;
+    const c=document.querySelector(`[data-ocur="${i}"]`); if(c) c.textContent=nf(cur,0)+" "+o.cur;
+    const m=document.querySelector(`[data-tomat="${i}"]`); if(m) m.textContent="+"+nf(toMat,0)+" "+o.cur;
+  });
 }
 
-// ---- Debts ----
+// ---- Debts : update-in-place ----
 function renderDebts(){
   const b=document.getElementById('debtBody'); b.innerHTML="";
   S.debts.forEach((d,i)=>{
-    const uah=toUah(d.amount,d.cur), us=toUsd(d.amount,d.cur);
     const tr=document.createElement('tr');
     tr.innerHTML=`<td class="l"><input class="txt" data-i="${i}" data-f="who" value="${d.who||''}"></td>
       <td><input class="num" type="number" step="any" data-i="${i}" data-f="amount" value="${d.amount}"></td>
       <td><select data-i="${i}" data-f="cur">${["USD","UAH","EUR"].map(c=>`<option ${c===d.cur?'selected':''}>${c}</option>`).join("")}</select></td>
       <td class="l"><input class="txt" data-i="${i}" data-f="note" value="${d.note||''}"></td>
       <td><input class="dt" type="date" data-i="${i}" data-f="due" value="${d.due||''}"></td>
-      <td>${grn(uah)}</td><td class="muted">${usd(us)}</td>
+      <td data-duah="${i}"></td><td class="muted" data-dusd="${i}"></td>
       <td><button class="btn del" data-del="${i}">×</button></td>`;
     b.appendChild(tr);
   });
+  recomputeDebts();
   b.querySelectorAll('[data-f]').forEach(el=>{
     const ev = el.tagName==="SELECT"?"onchange":"oninput";
-    el[ev]=e=>{ const i=+e.target.dataset.i,f=e.target.dataset.f; let v=e.target.value; if(f==="amount")v=parseFloat(v)||0; S.debts[i][f]=v; save(); renderAll(false); };
+    el[ev]=e=>{ const i=+e.target.dataset.i,f=e.target.dataset.f; let v=e.target.value; if(f==="amount")v=parseFloat(v)||0; S.debts[i][f]=v; save(); recomputeDebts(); renderTotals(); };
   });
-  b.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{ S.debts.splice(+btn.dataset.del,1); save(); renderAll(); });
+  b.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{ S.debts.splice(+btn.dataset.del,1); save(); renderDebts(); renderTotals(); });
+}
+function recomputeDebts(){
+  S.debts.forEach((d,i)=>{
+    const u=document.querySelector(`[data-duah="${i}"]`), s=document.querySelector(`[data-dusd="${i}"]`);
+    if(u)u.textContent=grn(toUah(d.amount,d.cur)); if(s)s.textContent=usd(toUsd(d.amount,d.cur));
+  });
 }
 
 // ---- totals ----
@@ -292,9 +351,9 @@ function totals(){
   uah+=toUah(S.btc*rate('btcUsd'),"USD");
   uah+=toUah(S.eth*rate('ethUsd'),"USD");
   uah+=toUah(S.inzhur.value,S.inzhur.cur);
-  S.ovdp.forEach(o=>{ const yE=o.buy?years(o.buy,new Date().toISOString().slice(0,10)):0; uah+=toUah(o.amount+o.amount*(o.yld/100)*Math.max(0,yE),o.cur); });
+  if(S.energy) uah+=toUah(S.energy.qty*S.energy.price,S.energy.cur);
+  S.ovdp.forEach(o=>{ const yE=o.buy?Math.max(0,years(o.buy,new Date().toISOString().slice(0,10))):0; uah+=toUah(o.amount+o.amount*(o.yld/100)*yE,o.cur); });
   let debt=0; S.debts.forEach(d=>debt+=toUah(d.amount,d.cur));
-  // projected annual income
   let profUah = toUah(S.inzhur.value*(S.inzhur.yld/100)*(1-S.inzhur.tax/100), S.inzhur.cur);
   S.ovdp.forEach(o=>profUah+=toUah(o.amount*(o.yld/100),o.cur));
   return {uah, debt, profUah};
@@ -310,16 +369,8 @@ function renderTotals(){
   document.getElementById('incDebts').checked = S.incDebts;
 }
 
-function renderAll(full=true){
-  if(full){ renderRates(); renderSimple(); renderInzhur(); renderOvdp(); renderDebts(); }
-  else { renderSimple(); /* keep focus on edited inputs elsewhere */ }
-  renderTotals();
-}
-
-// when editing in deep tables we still want totals + that table refreshed but not steal focus from current input.
-// Simpler: on every input we re-render totals only (renderAll(false) re-renders simple table). For tables with text inputs,
-// re-rendering steals focus; so those handlers call renderTotals via a lightweight path:
-function lightUpdate(){ renderTotals(); }
+function recomputeAll(){ recomputeSimple(); updateInzhurProfit(); recomputeEnergy(); recomputeOvdp(); recomputeDebts(); renderTotals(); }
+function renderAll(){ renderRates(); renderSimple(); renderInzhur(); renderEnergy(); renderOvdp(); renderDebts(); renderTotals(); }
 
 // tabs
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
