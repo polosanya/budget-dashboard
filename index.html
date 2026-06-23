@@ -62,6 +62,12 @@ window.RATES = {"usdUah":45.0883,"eurUah":51.5989,"btcUsd":65437,"ethUsd":1726,"
 <!-- RATES_BLOCK_END -->
 <h1>Мій бюджет</h1>
 <div class="sub">Моніторинг активів з актуальними курсами. Усі суми зберігаються у браузері автоматично.</div>
+<div class="share" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+  <button class="btn" id="exportBtn">⬇ Експорт (файл)</button>
+  <button class="btn" id="copyBtn">⧉ Скопіювати код</button>
+  <label class="btn" style="cursor:pointer">⬆ Імпорт файлу<input type="file" id="importFile" accept="application/json,.json" hidden></label>
+  <button class="btn" id="pasteBtn">⮵ Вставити код</button>
+</div>
 
 <!-- RATES -->
 <div class="card">
@@ -326,6 +332,32 @@ document.getElementById('incDebts').onchange=e=>{ S.incDebts=e.target.checked; s
 document.getElementById('addOvdp').onclick=()=>{ S.ovdp.push({name:"ОВДП #"+(S.ovdp.length+1),cur:"UAH",amount:0,yld:17,buy:"",mat:""}); save(); renderOvdp(); renderTotals(); };
 document.getElementById('addDebt').onclick=()=>{ S.debts.push({who:"",amount:0,cur:"USD",note:"",due:""}); save(); renderDebts(); renderTotals(); };
 document.getElementById('foot').textContent = "Дані зберігаються лише у твоєму браузері. Курси оновлюються автоматично.";
+
+// ---- share: export / import data ----
+function applyImport(obj){
+  if(!obj || typeof obj!=="object") throw new Error("bad");
+  S = Object.assign(JSON.parse(JSON.stringify(DEF)), obj);
+  if(!Array.isArray(S.ovdp)) S.ovdp=JSON.parse(JSON.stringify(DEF.ovdp));
+  if(!Array.isArray(S.debts)) S.debts=JSON.parse(JSON.stringify(DEF.debts));
+  save(); renderAll();
+}
+document.getElementById('exportBtn').onclick=()=>{
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download="budget-"+new Date().toISOString().slice(0,10)+".json"; a.click();
+};
+document.getElementById('copyBtn').onclick=async()=>{
+  try{ await navigator.clipboard.writeText(JSON.stringify(S)); document.getElementById('copyBtn').textContent="✓ Скопійовано"; setTimeout(()=>document.getElementById('copyBtn').textContent="⧉ Скопіювати код",1500);}catch(e){ prompt("Скопіюй цей код:", JSON.stringify(S)); }
+};
+document.getElementById('importFile').onchange=e=>{
+  const f=e.target.files[0]; if(!f)return; const r=new FileReader();
+  r.onload=()=>{ try{ applyImport(JSON.parse(r.result)); alert("Дані імпортовано ✓"); }catch(err){ alert("Не вдалося прочитати файл"); } };
+  r.readAsText(f); e.target.value="";
+};
+document.getElementById('pasteBtn').onclick=()=>{
+  const t=prompt("Встав код даних, отриманий від іншої людини:"); if(!t)return;
+  try{ applyImport(JSON.parse(t.trim())); alert("Дані імпортовано ✓"); }catch(err){ alert("Код некоректний"); }
+};
 
 // ---- live rate fetch (works when hosted on a real website e.g. GitHub Pages) ----
 async function fetchLiveRates(){
