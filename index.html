@@ -327,7 +327,23 @@ document.getElementById('addOvdp').onclick=()=>{ S.ovdp.push({name:"ОВДП #"+
 document.getElementById('addDebt').onclick=()=>{ S.debts.push({who:"",amount:0,cur:"USD",note:"",due:""}); save(); renderDebts(); renderTotals(); };
 document.getElementById('foot').textContent = "Дані зберігаються лише у твоєму браузері. Курси оновлюються автоматично.";
 
+// ---- live rate fetch (works when hosted on a real website e.g. GitHub Pages) ----
+async function fetchLiveRates(){
+  try{
+    const nbu=await fetch('https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json').then(r=>r.json());
+    const u=nbu.find(x=>x.cc==='USD'), e=nbu.find(x=>x.cc==='EUR');
+    if(u&&u.rate)RATES.usdUah=u.rate; if(e&&e.rate)RATES.eurUah=e.rate;
+  }catch(err){}
+  try{
+    const cg=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd').then(r=>r.json());
+    if(cg.bitcoin)RATES.btcUsd=cg.bitcoin.usd; if(cg.ethereum)RATES.ethUsd=cg.ethereum.usd;
+  }catch(err){}
+  RATES.asOf=new Date().toISOString().slice(0,10);
+  renderAll();
+}
+
 renderAll();
+fetchLiveRates();
 </script>
 </body>
 </html>
